@@ -3,6 +3,7 @@ import numpy as np
 from PIL import Image
 import fitz
 import io
+import base64
 from streamlit_drawable_canvas import st_canvas
 
 st.set_page_config(layout="wide", page_title="Jianpu Snipper (Manual)", initial_sidebar_state="collapsed")
@@ -43,7 +44,13 @@ if uploaded_file is not None:
                 disp_w = int(img_np.shape[1] * scale)
                 disp_h = int(img_np.shape[0] * scale)
                 disp_img = Image.fromarray(img_np).resize((disp_w, disp_h), Image.Resampling.LANCZOS).convert("RGBA")
-                st.session_state.page_disp_images[p_num] = disp_img
+                
+                # Base64 encode the image to fundamentally bypass Streamlit Cloud's broken Media Server
+                buffered = io.BytesIO()
+                disp_img.save(buffered, format="PNG")
+                img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                
+                st.session_state.page_disp_images[p_num] = f"data:image/png;base64,{img_str}"
                 
                 st.session_state.page_objects[p_num] = []
                 st.session_state.redo_stack[p_num] = []
@@ -117,8 +124,8 @@ if uploaded_file is not None:
         disp_w = int(page_img_np.shape[1] * scale)
         disp_h = int(page_img_np.shape[0] * scale)
         
-        # Pull pre-cached display image to ensure fast stable renders
-        disp_img = st.session_state.page_disp_images[p_idx]
+        # Pull pre-cached display image base64 data URI
+        disp_img_b64 = st.session_state.page_disp_images[p_idx]
         
         # We strictly bind the Streamlit component key to the current page index.
         # This is absolutely vital because it guarantees the Python widget-cache isolates variables per-page,
@@ -130,14 +137,23 @@ if uploaded_file is not None:
         initial_drawing = {
             "version": "4.4.0",
             "objects": st.session_state.page_objects[p_idx],
-            "ext_metadata": {"page": p_idx, "v": st.session_state.render_keys[p_idx]}
+            "ext_metadata": {"page": p_idx, "v": st.session_state.render_keys[p_idx]},
+            "background": "transparent",
+            "backgroundImage": {
+                "type": "image",
+                "version": "4.4.0",
+                "src": disp_img_b64,
+                "originX": "left",
+                "originY": "top",
+                "crossOrigin": "anonymous"
+            }
         }
         
         canvas_result = st_canvas(
             fill_color="rgba(0, 0, 255, 0.2)", # Blue boxes
             stroke_width=2,
             stroke_color="rgba(0, 0, 255, 1)",
-            background_image=disp_img,
+            # WARNING: DO NOT PASS `background_image=` here! Streamlit Cloud heavily glitches with relative media paths.
             update_streamlit=True,
             height=disp_h,
             width=disp_w,
