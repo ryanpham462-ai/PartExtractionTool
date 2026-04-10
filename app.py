@@ -46,11 +46,13 @@ if uploaded_file is not None:
                 disp_img = Image.fromarray(img_np).resize((disp_w, disp_h), Image.Resampling.LANCZOS).convert("RGBA")
                 
                 # Base64 encode the image to fundamentally bypass Streamlit Cloud's broken Media Server
+                # WARNING: We MUST encode as tightly compressed JPEG! Streamlit Cloud violently crashes (MarshallComponentException) 
+                # if the Canvas JSON WebSocket payload exceeds its data-cap. PNG serialization is mathematically too heavy!
                 buffered = io.BytesIO()
-                disp_img.save(buffered, format="PNG")
+                disp_img.convert("RGB").save(buffered, format="JPEG", quality=60)
                 img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
                 
-                st.session_state.page_disp_images[p_num] = f"data:image/png;base64,{img_str}"
+                st.session_state.page_disp_images[p_num] = f"data:image/jpeg;base64,{img_str}"
                 
                 st.session_state.page_objects[p_num] = []
                 st.session_state.redo_stack[p_num] = []
